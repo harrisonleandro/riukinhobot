@@ -1,7 +1,8 @@
 import os
 import requests
 import shutil
-import pandas as pd
+import xlwings as xw
+import pandas as pd  # Importando o pandas
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
@@ -12,7 +13,7 @@ load_dotenv()
 
 # Configuração do bot
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-EXCEL_GITHUB_URL = "https://github.com/harrisonleandro/riukinhobot/blob/main/AprovaçõesdeOPs.xlsm"
+EXCEL_GITHUB_URL = "https://raw.githubusercontent.com/harrisonleandro/riukinhobot/main/AprovaçõesdeOPs.xlsm"
 SHEET_NAME = "Registros"
 
 # Configuração do log
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 def download_excel():
     try:
         response = requests.get(EXCEL_GITHUB_URL, stream=True)
-        response.raise_for_status()
+        response.raise_for_status()  # Garante que o código de status seja 200
         with open("AprovaçõesdeOPs.xlsm", "wb") as file:
             shutil.copyfileobj(response.raw, file)
         print("Arquivo Excel baixado com sucesso!")
@@ -49,7 +50,13 @@ async def status(update: Update, context: CallbackContext) -> None:
     op = context.args[0].lstrip("0")  # Remove zeros à esquerda
     try:
         download_excel()  # Baixar o arquivo Excel do GitHub
-        df = pd.read_excel("AprovaçõesdeOPs.xlsm", sheet_name=SHEET_NAME, engine='openpyxl')
+        
+        # Abrir o arquivo usando xlwings
+        wb = xw.Book("AprovaçõesdeOPs.xlsm")
+        sheet = wb.sheets[SHEET_NAME]
+
+        # Ler os dados da planilha
+        df = sheet.range('A1').expand().options(pd.DataFrame, header=1, index=False).value
 
         if 'OP' not in df.columns or 'Status' not in df.columns:
             await update.message.reply_text("Erro: A planilha não contém as colunas esperadas ('OP' e 'Status').")
@@ -76,7 +83,13 @@ async def lista(update: Update, context: CallbackContext) -> None:
     linha = context.args[0].lstrip("0")  # Remove zeros à esquerda
     try:
         download_excel()  # Baixar o arquivo Excel do GitHub
-        df = pd.read_excel("AprovaçõesdeOPs.xlsm", sheet_name=SHEET_NAME, engine='openpyxl')
+        
+        # Abrir o arquivo usando xlwings
+        wb = xw.Book("AprovaçõesdeOPs.xlsm")
+        sheet = wb.sheets[SHEET_NAME]
+
+        # Ler os dados da planilha
+        df = sheet.range('A1').expand().options(pd.DataFrame, header=1, index=False).value
 
         if 'Linha' not in df.columns or 'OP' not in df.columns or 'Status' not in df.columns:
             await update.message.reply_text("Erro: A planilha não contém as colunas esperadas ('Linha', 'OP' e 'Status').")
@@ -102,7 +115,7 @@ def main():
     app.add_handler(CommandHandler("status", status))
     app.add_handler(CommandHandler("lista", lista))
 
-    # Run polling, using a long polling timeout to avoid conflicts
+    # Run polling, usando um timeout maior para evitar conflitos
     try:
         app.run_polling(timeout=30, poll_interval=5)
     except Exception as e:
