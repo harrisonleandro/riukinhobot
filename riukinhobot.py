@@ -4,7 +4,7 @@ import shutil
 import pandas as pd
 from dotenv import load_dotenv
 from telegram import Update, Bot
-from telegram.ext import Application, CommandHandler, CallbackContext, Dispatcher
+from telegram.ext import Application, CommandHandler, CallbackContext
 import logging
 from flask import Flask, request
 
@@ -14,7 +14,8 @@ load_dotenv()
 # Configuração do bot
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-EXCEL_GITHUB_URL = "https://github.com/harrisonleandro/riukinhobot/blob/main/AprovaçõesdeOPs.xlsm"
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")  # Agora está buscando do .env
+EXCEL_GITHUB_URL = "https://raw.githubusercontent.com/harrisonleandro/riukinhobot/main/AprovaçõesdeOPs.xlsm"
 SHEET_NAME = "Registros"
 
 # Configuração do log
@@ -24,11 +25,10 @@ logger = logging.getLogger(__name__)
 # Configuração do Flask
 app = Flask(__name__)
 
-# Inicializando o bot
+# Inicializando o bot e o dispatcher
 bot = Bot(token=TOKEN)
-
-# Inicializando o dispatcher
-dispatcher = Dispatcher(bot, None)
+application = Application.builder().token(TOKEN).build()
+dispatcher = application.dispatcher
 
 # Função para baixar o arquivo Excel do GitHub
 def download_excel():
@@ -107,25 +107,29 @@ async def lista(update: Update, context: CallbackContext) -> None:
 
 # Função para configurar o webhook
 async def set_webhook():
-    await bot.set_webhook(url=WEBHOOK_URL)
+    await bot.set_webhook(url=f"{WEBHOOK_URL}/{WEBHOOK_SECRET}")  # URL do webhook concatenada com a chave secreta
 
 # Rota do Flask para responder ao webhook
-@app.route('/' + os.getenv("WEBHOOK_SECRET"), methods=['POST'])
+@app.route('/' + WEBHOOK_SECRET, methods=['POST'])
 def webhook():
     json_str = request.get_data().decode('UTF-8')
     update = Update.de_json(json_str, bot)
-    dispatcher.process_update(update)
+    dispatcher.process_update(update)  # Usando o dispatcher para processar o update
     return "OK"
 
 # Função principal para iniciar o bot
 def main():
     import asyncio
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(set_webhook())  # Configurar o webhook antes de iniciar o servidor
-
-    app.run(host='0.0.0.0', port=int(os.getenv("PORT", 10000)))  # Iniciar o Flask
+    loop.run_until_complete(set_webhook())  # Configura o webhook no início
+    app.run(host='0.0.0.0', port=int(os.getenv("PORT", 10000)))  # Inicia o Flask
 
 # Execução do script
 if __name__ == "__main__":
-    main()
+    # Adicionando os handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("status", status))
+    application.add_handler(CommandHandler("lista", lista))
 
+    # Iniciando o bot
+    application.run_polling()
