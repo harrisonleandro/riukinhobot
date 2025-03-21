@@ -3,17 +3,17 @@ import requests
 import shutil
 import pandas as pd
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import Application, CommandHandler, CallbackContext
+from telegram import Update, Bot
+from telegram.ext import Application, CommandHandler, CallbackContext, Dispatcher
 import logging
 from flask import Flask, request
-from telegram import Bot
 
 # Carregar variáveis de ambiente
 load_dotenv()
 
 # Configuração do bot
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 EXCEL_GITHUB_URL = "https://github.com/harrisonleandro/riukinhobot/blob/main/AprovaçõesdeOPs.xlsm"
 SHEET_NAME = "Registros"
 
@@ -21,8 +21,14 @@ SHEET_NAME = "Registros"
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Criar uma aplicação Flask
+# Configuração do Flask
 app = Flask(__name__)
+
+# Inicializando o bot
+bot = Bot(token=TOKEN)
+
+# Inicializando o dispatcher
+dispatcher = Dispatcher(bot, None)
 
 # Função para baixar o arquivo Excel do GitHub
 def download_excel():
@@ -99,30 +105,27 @@ async def lista(update: Update, context: CallbackContext) -> None:
         logger.error(f"Erro ao buscar OPs da linha {linha}: {str(e)}")
         await update.message.reply_text(f"Erro ao processar a linha {linha}: {str(e)}")
 
-# Configurar o Webhook
-@app.route('/webhook', methods=['POST'])
+# Função para configurar o webhook
+async def set_webhook():
+    await bot.set_webhook(url=WEBHOOK_URL)
+
+# Rota do Flask para responder ao webhook
+@app.route('/' + os.getenv("WEBHOOK_SECRET"), methods=['POST'])
 def webhook():
     json_str = request.get_data().decode('UTF-8')
     update = Update.de_json(json_str, bot)
-    application.process_update(update)
-    return 'OK'
+    dispatcher.process_update(update)
+    return "OK"
 
-# Configuração do bot e webhook
-def start_webhook():
-    global bot, application
-    bot = Bot(TOKEN)
-    application = Application.builder().token(TOKEN).build()
+# Função principal para iniciar o bot
+def main():
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(set_webhook())  # Configurar o webhook antes de iniciar o servidor
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("status", status))
-    application.add_handler(CommandHandler("lista", lista))
-
-    # Defina seu endpoint de webhook
-    bot.set_webhook(url=os.getenv("WEBHOOK_URL"))
-
-    # Inicia o servidor Flask
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    app.run(host='0.0.0.0', port=int(os.getenv("PORT", 10000)))  # Iniciar o Flask
 
 # Execução do script
 if __name__ == "__main__":
-    start_webhook()
+    main()
+
