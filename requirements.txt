@@ -2,5 +2,6 @@ python-telegram-bot==20.0
 python-dotenv
 pandas
 requests
+xlwings
 openpyxl
 logging
