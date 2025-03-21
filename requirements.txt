@@ -5,3 +5,6 @@ requests
 xlwings
 openpyxl
 logging
+flask
+python-telegram-bot
+
