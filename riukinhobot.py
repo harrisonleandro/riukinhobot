@@ -1,30 +1,34 @@
 import os
 import requests
 import shutil
-import xlwings as xw
-import pandas as pd  # Importando o pandas
+import pandas as pd
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
 import logging
+from flask import Flask, request
+from telegram import Bot
 
 # Carregar variáveis de ambiente
 load_dotenv()
 
 # Configuração do bot
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-EXCEL_GITHUB_URL = "https://raw.githubusercontent.com/harrisonleandro/riukinhobot/main/AprovaçõesdeOPs.xlsm"
+EXCEL_GITHUB_URL = "https://github.com/harrisonleandro/riukinhobot/blob/main/AprovaçõesdeOPs.xlsm"
 SHEET_NAME = "Registros"
 
 # Configuração do log
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Criar uma aplicação Flask
+app = Flask(__name__)
+
 # Função para baixar o arquivo Excel do GitHub
 def download_excel():
     try:
         response = requests.get(EXCEL_GITHUB_URL, stream=True)
-        response.raise_for_status()  # Garante que o código de status seja 200
+        response.raise_for_status()
         with open("AprovaçõesdeOPs.xlsm", "wb") as file:
             shutil.copyfileobj(response.raw, file)
         print("Arquivo Excel baixado com sucesso!")
@@ -50,13 +54,7 @@ async def status(update: Update, context: CallbackContext) -> None:
     op = context.args[0].lstrip("0")  # Remove zeros à esquerda
     try:
         download_excel()  # Baixar o arquivo Excel do GitHub
-        
-        # Abrir o arquivo usando xlwings
-        wb = xw.Book("AprovaçõesdeOPs.xlsm")
-        sheet = wb.sheets[SHEET_NAME]
-
-        # Ler os dados da planilha
-        df = sheet.range('A1').expand().options(pd.DataFrame, header=1, index=False).value
+        df = pd.read_excel("AprovaçõesdeOPs.xlsm", sheet_name=SHEET_NAME, engine='openpyxl')
 
         if 'OP' not in df.columns or 'Status' not in df.columns:
             await update.message.reply_text("Erro: A planilha não contém as colunas esperadas ('OP' e 'Status').")
@@ -83,13 +81,7 @@ async def lista(update: Update, context: CallbackContext) -> None:
     linha = context.args[0].lstrip("0")  # Remove zeros à esquerda
     try:
         download_excel()  # Baixar o arquivo Excel do GitHub
-        
-        # Abrir o arquivo usando xlwings
-        wb = xw.Book("AprovaçõesdeOPs.xlsm")
-        sheet = wb.sheets[SHEET_NAME]
-
-        # Ler os dados da planilha
-        df = sheet.range('A1').expand().options(pd.DataFrame, header=1, index=False).value
+        df = pd.read_excel("AprovaçõesdeOPs.xlsm", sheet_name=SHEET_NAME, engine='openpyxl')
 
         if 'Linha' not in df.columns or 'OP' not in df.columns or 'Status' not in df.columns:
             await update.message.reply_text("Erro: A planilha não contém as colunas esperadas ('Linha', 'OP' e 'Status').")
@@ -107,20 +99,30 @@ async def lista(update: Update, context: CallbackContext) -> None:
         logger.error(f"Erro ao buscar OPs da linha {linha}: {str(e)}")
         await update.message.reply_text(f"Erro ao processar a linha {linha}: {str(e)}")
 
-# Função principal
-def main():
-    app = Application.builder().token(TOKEN).build()
+# Configurar o Webhook
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    json_str = request.get_data().decode('UTF-8')
+    update = Update.de_json(json_str, bot)
+    application.process_update(update)
+    return 'OK'
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("lista", lista))
+# Configuração do bot e webhook
+def start_webhook():
+    global bot, application
+    bot = Bot(TOKEN)
+    application = Application.builder().token(TOKEN).build()
 
-    # Run polling, usando um timeout maior para evitar conflitos
-    try:
-        app.run_polling(timeout=30, poll_interval=5)
-    except Exception as e:
-        logger.error(f"Erro ao iniciar o polling: {e}")
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("status", status))
+    application.add_handler(CommandHandler("lista", lista))
+
+    # Defina seu endpoint de webhook
+    bot.set_webhook(url=os.getenv("WEBHOOK_URL"))
+
+    # Inicia o servidor Flask
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
 
 # Execução do script
 if __name__ == "__main__":
-    main()
+    start_webhook()
